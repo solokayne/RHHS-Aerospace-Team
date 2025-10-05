@@ -6,23 +6,8 @@
 <title>RHHS Aerospace — TEMPO Air Quality Forecast</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-  body {
-    font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
-    margin:0;
-    padding-top:72px; /* space for sticky header */
-  }
-  header {
-    position: sticky;
-    top:0;
-    z-index:1000;
-    background: linear-gradient(90deg,#05386b,#379683);
-    color:white;
-    padding:16px 20px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    box-shadow:0 3px 6px rgba(0,0,0,0.1);
-  }
+  body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; padding-top:72px; }
+  header { position: sticky; top:0; z-index:1000; background:linear-gradient(90deg,#05386b,#379683); color:white; padding:16px 20px; display:flex; align-items:center; justify-content:space-between; box-shadow:0 3px 6px rgba(0,0,0,0.1); }
   header .meta { font-size:0.9rem; opacity:0.95 }
   #app { display:grid; grid-template-columns: 360px 1fr; height: calc(100vh - 72px); }
   #sidebar { padding:12px; border-right:1px solid #eee; overflow:auto; background:#f0fef5; }
@@ -116,16 +101,13 @@
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
-// NASA GIBS TEMPO overlay (English labels)
-const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
+// NASA GIBS TEMPO overlay (English)
+const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi', {
   layers: 'OMNO2d',
   format: 'image/png',
   transparent:true,
   attribution:'NASA GIBS',
-  crs: L.CRS.EPSG4326,
-  version:'1.3.0',
-  styles: '',
-  lang:'en'
+  version:'1.3.0'
 }).addTo(map);
 
 // NOAA wind overlay
@@ -160,18 +142,12 @@ function addAlert(msg){
   ul.prepend(li);
 }
 
-function logTest(msg){ 
-  const el = document.getElementById('test-log'); 
-  el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; 
-}
-
 function sampleOpenAQ(lat, lon){
   const now = new Date().toISOString();
   const val = (10 + Math.abs(Math.sin(lat+lon))*40 + (Math.random()*6-3)).toFixed(1);
   return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]}};
 }
 
-// --- Fetch data ---
 async function fetchOpenAQ(lat, lon, allowMock=true){
   if(!navigator.onLine) return allowMock ? sampleOpenAQ(lat,lon) : null;
   const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
@@ -179,31 +155,22 @@ async function fetchOpenAQ(lat, lon, allowMock=true){
   catch(e){ return allowMock ? sampleOpenAQ(lat,lon) : null; }
 }
 
-// --- Heat overlay (radius scales with PM2.5) ---
+// --- Heat overlay ---
 function updateHeatOverlay(lat, lon, value){
   if(!document.getElementById('heat-toggle').checked) return;
-
-  const radius = 5000 + Math.min(value,100)*100; // 5-15 km radius
+  const radius = 5000 + Math.min(value,100)*100;
   const color = getAQColor(value);
-  const circle = L.circle([lat, lon], {
-    radius: radius,
-    color: color,
-    fillColor: color,
-    fillOpacity: 0.3,
-    weight: 0
-  });
+  const circle = L.circle([lat, lon], { radius, color, fillColor: color, fillOpacity:0.3, weight:0 });
   heatLayer.addLayer(circle);
 }
 
-document.getElementById('heat-toggle').addEventListener('change', (e)=>{
-  if(!e.target.checked) heatLayer.clearLayers();
-});
-
-// --- Update chart & marker ---
+// --- Update display ---
 function updateAQDisplay(lat, lon, data){
-  if(!data || !data.results || !data.results.length) return;
-  const measurement = data.results[0].measurements.find(m=>m.parameter==='pm25');
-  if(!measurement) return;
+  const measurement = data.results[0]?.measurements?.find(m => m.parameter==='pm25');
+  if(!measurement){
+    document.getElementById('aq-details').innerHTML = "No PM2.5 data available.";
+    return;
+  }
 
   const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
   if(!locationHistory[key]) locationHistory[key] = [];
@@ -214,16 +181,12 @@ function updateAQDisplay(lat, lon, data){
   aqChart.data.datasets[0].data = locationHistory[key].map(h=>h.pm);
   aqChart.update();
 
-  document.getElementById('aq-details').innerHTML = `
-    PM2.5: <b>${measurement.value} µg/m³</b><br>
-    Last updated: ${new Date(measurement.lastUpdated).toLocaleString()}
-  `;
+  document.getElementById('aq-details').innerHTML = `PM2.5: <b>${measurement.value} µg/m³</b><br>Last updated: ${new Date(measurement.lastUpdated).toLocaleString()}`;
 
   if(pointMarker) map.removeLayer(pointMarker);
-  pointMarker = L.circleMarker([lat, lon], {
-    radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8
-  }).addTo(map).bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
+  pointMarker = L.circleMarker([lat, lon], { radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8 }).addTo(map).bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
 
+  heatLayer.clearLayers();
   updateHeatOverlay(lat, lon, measurement.value);
 
   const thresh = Number(document.getElementById('alert-thresh').value);
@@ -239,9 +202,8 @@ async function handleLocation(lat, lon){
 
 map.on('click', e => handleLocation(e.latlng.lat, e.latlng.lng));
 document.getElementById('loc-btn').addEventListener('click', ()=>{
-  if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(p => handleLocation(p.coords.latitude,p.coords.longitude));
-  }else alert('Geolocation not supported.');
+  if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p => handleLocation(p.coords.latitude,p.coords.longitude));
+  else alert('Geolocation not supported.');
 });
 
 // --- Self-tests ---
@@ -250,40 +212,25 @@ async function runSelfTests(){
   logs.push(map ? "Map loaded ✅" : "Map missing ❌");
   logs.push(tempoLayer ? "TEMPO overlay loaded ✅" : "TEMPO overlay missing ❌");
   logs.push(windLayer ? "Wind overlay loaded ✅" : "Wind overlay missing ❌");
-
   try {
-    const data = await fetchOpenAQ(43.65,-79.38);
+    const data = await fetchOpenAQ(43.65,-79.38,true);
     logs.push(data && data.results ? "OpenAQ API works ✅" : "OpenAQ API failed ❌");
-  } catch(e) {
-    logs.push("OpenAQ API failed ❌");
-  }
-
+  } catch(e) { logs.push("OpenAQ API failed ❌"); }
   document.getElementById('test-log').textContent = logs.join("\n");
 }
-
 document.getElementById('run-tests').addEventListener('click', runSelfTests);
 
 // --- Legend ---
 const legend = L.control({position: 'bottomright'});
-
 legend.onAdd = function(map) {
   const div = L.DomUtil.create('div', 'info legend');
   const grades = [0, 12.1, 35.5, 55.5];
   const labels = ['Good', 'Moderate', 'Unhealthy for Sensitive', 'Unhealthy'];
   const colors = ['#2ECC40','#FFDC00','#FF851B','#FF4136'];
-
-  let html = '<div style="background:white; padding:8px; border-radius:6px; box-shadow:0 2px 6px rgba(0,0,0,0.3); font-size:0.85rem;">';
-  html += '<b>PM2.5 (µg/m³)</b><br>';
-  for(let i=0;i<grades.length;i++){
-    html +=
-      `<i style="background:${colors[i]}; width:18px; height:18px; display:inline-block; margin-right:6px;"></i>` +
-      `${labels[i]}<br>`;
-  }
-  html += '</div>';
-  div.innerHTML = html;
-  return div;
+  let html = '<div style="background:white; padding:8px; border-radius:6px; box-shadow:0 2px 6px rgba(0,0,0,0.3); font-size:0.85rem;"><b>PM2.5 (µg/m³)</b><br>';
+  for(let i=0;i<grades.length;i++) html += `<i style="background:${colors[i]}; width:18px; height:18px; display:inline-block; margin-right:6px;"></i>${labels[i]}<br>`;
+  html += '</div>'; div.innerHTML = html; return div;
 };
-
 legend.addTo(map);
 </script>
 </body>

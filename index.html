@@ -1,27 +1,42 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>RHHS Aerospace — TEMPO Air Quality Forecast</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <style>
-    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; }
-    header { background:linear-gradient(90deg,#05386b,#379683); color:white; padding:12px 20px; display:flex; align-items:center; justify-content:space-between }
-    header .meta { font-size:0.9rem; opacity:0.95 }
-    #app { display:grid; grid-template-columns: 360px 1fr; height: calc(100vh - 72px); }
-    #sidebar { padding:12px; border-right:1px solid #eee; overflow:auto; background:#f0fef5; }
-    #map { width:100%; height:100%; }
-    .card { background:white; border-radius:10px; box-shadow:0 6px 18px rgba(2,6,23,.08); padding:12px; margin-bottom:12px }
-    .small { font-size:0.9rem; color:#555 }
-    .big { font-size:1.15rem; font-weight:600 }
-    footer { padding:8px 16px; font-size:0.85rem; color:#444 }
-    button { background:#379683; color:white; border:none; padding:8px 12px; border-radius:8px; cursor:pointer }
-    .muted { color:#888 }
-    #test-log { height:120px; overflow:auto; background:#fafafa; border-radius:8px; padding:8px; font-family:monospace; font-size:0.85rem }
-    label.inline { display:flex; gap:8px; align-items:center }
-    select,input { border-radius:4px; border:1px solid #aaa; padding:4px 6px; }
-  </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RHHS Aerospace — TEMPO Air Quality Forecast</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  body {
+    font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    margin:0;
+    padding-top:72px; /* space for sticky header */
+  }
+  header {
+    position: sticky;
+    top:0;
+    z-index:1000;
+    background: linear-gradient(90deg,#05386b,#379683);
+    color:white;
+    padding:16px 20px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    box-shadow:0 3px 6px rgba(0,0,0,0.1);
+  }
+  header .meta { font-size:0.9rem; opacity:0.95 }
+  #app { display:grid; grid-template-columns: 360px 1fr; height: calc(100vh - 72px); }
+  #sidebar { padding:12px; border-right:1px solid #eee; overflow:auto; background:#f0fef5; }
+  #map { width:100%; height:100%; }
+  .card { background:white; border-radius:10px; box-shadow:0 6px 18px rgba(2,6,23,.08); padding:12px; margin-bottom:12px }
+  .small { font-size:0.9rem; color:#555 }
+  .big { font-size:1.15rem; font-weight:600 }
+  footer { padding:8px 16px; font-size:0.85rem; color:#444 }
+  button { background:#379683; color:white; border:none; padding:8px 12px; border-radius:8px; cursor:pointer }
+  .muted { color:#888 }
+  #test-log { height:120px; overflow:auto; background:#fafafa; border-radius:8px; padding:8px; font-family:monospace; font-size:0.85rem }
+  label.inline { display:flex; gap:8px; align-items:center }
+  select,input { border-radius:4px; border:1px solid #aaa; padding:4px 6px; }
+</style>
 </head>
 <body>
 <header>
@@ -68,6 +83,7 @@
         </label>
         <label class="inline small"><input id="mock-toggle" type="checkbox" checked /> <span>Use mock data if network/API calls fail</span></label>
         <div><label class="small">Notify when AQI &gt; <input id="alert-thresh" type="number" value="100" style="width:70px" /></label></div>
+        <label class="inline small"><input id="heat-toggle" type="checkbox" /> <span>Show AQI Heat Overlay</span></label>
       </div>
     </div>
 
@@ -96,34 +112,26 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
 
 <script>
-// --- Map Initialization ---
+// --- Map setup ---
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
-// Sample overlay points for demonstration
-const overlayPoints = [
-  {lat:43.7, lon:-79.4, pm:40},
-  {lat:43.6, lon:-79.3, pm:75},
-  {lat:43.65, lon:-79.35, pm:120},
-  {lat:43.66, lon:-79.38, pm:160}
-];
+// NASA GIBS TEMPO overlay (English labels)
+const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
+  layers: 'OMNO2d',
+  format: 'image/png',
+  transparent:true,
+  attribution:'NASA GIBS',
+  crs: L.CRS.EPSG4326,
+  version:'1.3.0',
+  styles: '',
+  lang:'en'
+}).addTo(map);
 
-// Add overlay circles
-function getAQColor(v){
-  if(v <= 12) return '#2ECC40';
-  if(v <= 35.4) return '#FFDC00';
-  if(v <= 55.4) return '#FF851B';
-  return '#FF4136';
-}
-overlayPoints.forEach(d => {
-  L.circle([d.lat,d.lon], {
-    radius:1200,
-    fillColor:getAQColor(d.pm),
-    color:'#333',
-    weight:1,
-    fillOpacity:0.6
-  }).addTo(map);
-});
+// NOAA wind overlay
+const windLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/arcgis/services/nowcoast/analysis_meteohydro_sfc_rtma_time/MapServer/WMSServer', {
+  layers: '1', format:'image/png', transparent:true, attribution:'NOAA'
+}).addTo(map);
 
 // --- Chart setup ---
 const ctx = document.getElementById('aq-chart');
@@ -133,15 +141,18 @@ const aqChart = new Chart(ctx, {
   options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true } } }
 });
 
-// --- History per location ---
-const locationHistory = {};
+// --- Helpers ---
 let pointMarker = null;
+let heatLayer = L.layerGroup().addTo(map);
+const locationHistory = {};
 
-// --- Helper functions ---
-function logTest(msg){ 
-  const el = document.getElementById('test-log'); 
-  el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; 
+function getAQColor(v){
+  if(v <= 12) return '#2ECC40';
+  if(v <= 35.4) return '#FFDC00';
+  if(v <= 55.4) return '#FF851B';
+  return '#FF4136';
 }
+
 function addAlert(msg){
   const ul=document.getElementById('alerts-list');
   const li=document.createElement('li'); 
@@ -149,14 +160,18 @@ function addAlert(msg){
   ul.prepend(li);
 }
 
-// Mock / sample OpenAQ data
+function logTest(msg){ 
+  const el = document.getElementById('test-log'); 
+  el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; 
+}
+
 function sampleOpenAQ(lat, lon){
   const now = new Date().toISOString();
   const val = (10 + Math.abs(Math.sin(lat+lon))*40 + (Math.random()*6-3)).toFixed(1);
-  return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]};
+  return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]}};
 }
 
-// Fetch OpenAQ with fallback
+// --- Fetch data ---
 async function fetchOpenAQ(lat, lon, allowMock=true){
   if(!navigator.onLine) return allowMock ? sampleOpenAQ(lat,lon) : null;
   const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
@@ -164,30 +179,40 @@ async function fetchOpenAQ(lat, lon, allowMock=true){
   catch(e){ return allowMock ? sampleOpenAQ(lat,lon) : null; }
 }
 
-// --- Update chart per location ---
-function updateAQChart(lat, lon, pm){
-  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
-  if(!locationHistory[key]) locationHistory[key] = [];
-  const history = locationHistory[key];
-  const now = new Date();
-  history.push({time: now.toLocaleTimeString(), pm});
-  if(history.length>24) history.shift();
+// --- Heat overlay (radius scales with PM2.5) ---
+function updateHeatOverlay(lat, lon, value){
+  if(!document.getElementById('heat-toggle').checked) return;
 
-  aqChart.data.labels = history.map(h=>h.time);
-  aqChart.data.datasets[0].data = history.map(h=>h.pm);
-  aqChart.update();
+  const radius = 5000 + Math.min(value,100)*100; // 5-15 km radius
+  const color = getAQColor(value);
+  const circle = L.circle([lat, lon], {
+    radius: radius,
+    color: color,
+    fillColor: color,
+    fillOpacity: 0.3,
+    weight: 0
+  });
+  heatLayer.addLayer(circle);
 }
 
-// --- Handle clicks / geolocation ---
-async function handleLocation(lat, lon){
-  const allowMock = document.getElementById('mock-toggle').checked;
-  const data = await fetchOpenAQ(lat, lon, allowMock);
-  if(!data || !data.results || !data.results.length) return;
+document.getElementById('heat-toggle').addEventListener('change', (e)=>{
+  if(!e.target.checked) heatLayer.clearLayers();
+});
 
+// --- Update chart & marker ---
+function updateAQDisplay(lat, lon, data){
+  if(!data || !data.results || !data.results.length) return;
   const measurement = data.results[0].measurements.find(m=>m.parameter==='pm25');
   if(!measurement) return;
 
-  updateAQChart(lat, lon, measurement.value);
+  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  if(!locationHistory[key]) locationHistory[key] = [];
+  locationHistory[key].push({time: new Date().toLocaleTimeString(), pm: measurement.value});
+  if(locationHistory[key].length>24) locationHistory[key].shift();
+
+  aqChart.data.labels = locationHistory[key].map(h=>h.time);
+  aqChart.data.datasets[0].data = locationHistory[key].map(h=>h.pm);
+  aqChart.update();
 
   document.getElementById('aq-details').innerHTML = `
     PM2.5: <b>${measurement.value} µg/m³</b><br>
@@ -195,33 +220,47 @@ async function handleLocation(lat, lon){
   `;
 
   if(pointMarker) map.removeLayer(pointMarker);
-  pointMarker = L.circleMarker([lat,lon], {
+  pointMarker = L.circleMarker([lat, lon], {
     radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8
   }).addTo(map).bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
+
+  updateHeatOverlay(lat, lon, measurement.value);
 
   const thresh = Number(document.getElementById('alert-thresh').value);
   if(measurement.value>thresh) addAlert(`High AQI detected: ${measurement.value} µg/m³`);
 }
 
-// --- Self-tests ---
-function runSelfTests(){
-  const logs = [];
-  logs.push(map ? "Map loaded ✅" : "Map missing ❌");
-  logs.push(overlayPoints.length ? `Overlay loaded (${overlayPoints.length} points) ✅` : "Overlay missing ❌");
-
-  fetchOpenAQ(43.65,-79.38).then(data=>{
-    logs.push(data && data.results ? "OpenAQ API works ✅" : "OpenAQ API failed ❌");
-    document.getElementById('test-log').textContent = logs.join("\n");
-  }).catch(()=>{ logs.push("OpenAQ API failed ❌"); document.getElementById('test-log').textContent = logs.join("\n"); });
+// --- Event handlers ---
+async function handleLocation(lat, lon){
+  const allowMock = document.getElementById('mock-toggle').checked;
+  const data = await fetchOpenAQ(lat, lon, allowMock);
+  updateAQDisplay(lat, lon, data);
 }
 
-// --- Event listeners ---
-map.on('click', e => handleLocation(e.latlng.lat,e.latlng.lng));
+map.on('click', e => handleLocation(e.latlng.lat, e.latlng.lng));
 document.getElementById('loc-btn').addEventListener('click', ()=>{
   if(navigator.geolocation){
     navigator.geolocation.getCurrentPosition(p => handleLocation(p.coords.latitude,p.coords.longitude));
   }else alert('Geolocation not supported.');
 });
+
+// --- Self-tests ---
+async function runSelfTests(){
+  const logs = [];
+  logs.push(map ? "Map loaded ✅" : "Map missing ❌");
+  logs.push(tempoLayer ? "TEMPO overlay loaded ✅" : "TEMPO overlay missing ❌");
+  logs.push(windLayer ? "Wind overlay loaded ✅" : "Wind overlay missing ❌");
+
+  try {
+    const data = await fetchOpenAQ(43.65,-79.38);
+    logs.push(data && data.results ? "OpenAQ API works ✅" : "OpenAQ API failed ❌");
+  } catch(e) {
+    logs.push("OpenAQ API failed ❌");
+  }
+
+  document.getElementById('test-log').textContent = logs.join("\n");
+}
+
 document.getElementById('run-tests').addEventListener('click', runSelfTests);
 </script>
 </body>

@@ -24,97 +24,87 @@
   </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1 style="margin:0; font-size:1.05rem">RHHS Aerospace — TEMPO Air Quality Forecast</h1>
-    <div class="meta">Satellite + Ground AQ Data Demo</div>
-  </div>
-  <div style="text-align:right">
-    <div class="meta">Sandbox / GitHub deployable</div>
-  </div>
-</header>
+  <header>
+    <div>
+      <h1 style="margin:0; font-size:1.05rem">RHHS Aerospace — TEMPO Air Quality Forecast</h1>
+      <div class="meta">Demo with resilient fetch, charts, and overlays</div>
+    </div>
+    <div style="text-align:right">
+      <div class="meta">Sandbox / GitHub deployable</div>
+    </div>
+  </header>
 
-<div id="app">
-  <aside id="sidebar">
-    <div class="card">
-      <div class="big">Location</div>
-      <div class="small">Click map or use device location to get local air quality.</div>
-      <div style="margin-top:8px; display:flex; gap:8px;">
-        <button id="loc-btn">Find My Location</button>
-        <button id="run-tests">Run self-tests</button>
+  <div id="app">
+    <aside id="sidebar">
+
+      <div class="card">
+        <div class="big">Location</div>
+        <div class="small">Click anywhere on the map to get local air quality, or use your device location.</div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button id="loc-btn">Find My Location</button>
+          <button id="run-tests">Run self-tests</button>
+        </div>
       </div>
-    </div>
 
-    <div class="card">
-      <div class="big" id="aq-label">Air Quality</div>
-      <canvas id="aq-chart" height="180"></canvas>
-      <div id="aq-details" class="small">No data selected.</div>
-    </div>
-
-    <div class="card">
-      <div class="big">Alerts</div>
-      <ul id="alerts-list" class="small"></ul>
-    </div>
-
-    <div class="card">
-      <div class="big">Settings</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <label class="small">Forecast window
-          <select id="forecast-window">
-            <option value="24">24h</option>
-            <option value="48">48h</option>
-            <option value="72">72h</option>
-          </select>
-        </label>
-        <label class="inline small"><input id="mock-toggle" type="checkbox" checked /> <span>Use mock data if network/API calls fail</span></label>
-        <div><label class="small">Notify when AQI &gt; <input id="alert-thresh" type="number" value="100" style="width:70px" /></label></div>
+      <div class="card">
+        <div class="big" id="aq-label">Air Quality</div>
+        <canvas id="aq-chart" height="180"></canvas>
+        <div id="aq-details" class="small">No data selected.</div>
       </div>
-    </div>
 
-    <div class="card small">
-      <div class="big">Architecture notes</div>
-      <p>OpenAQ + NASA/GIBS overlays. PM2.5 chart. Alerts. Geolocation & click support.</p>
-      <p class="muted">No IP tracking. Fully client-side.</p>
-    </div>
+      <div class="card">
+        <div class="big">Alerts</div>
+        <ul id="alerts-list" class="small"></ul>
+      </div>
 
-    <div class="card">
-      <div class="big">Self-test output</div>
-      <div id="test-log">(press "Run self-tests")</div>
-    </div>
-  </aside>
+      <div class="card">
+        <div class="big">Settings</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label class="small">Forecast window
+            <select id="forecast-window">
+              <option value="24">24h</option>
+              <option value="48">48h</option>
+              <option value="72">72h</option>
+            </select>
+          </label>
+          <label class="inline small"><input id="mock-toggle" type="checkbox" checked /> <span>Use mock data if network/API calls fail</span></label>
+          <div><label class="small">Notify when AQI &gt; <input id="alert-thresh" type="number" value="100" style="width:70px" /></label></div>
+        </div>
+      </div>
 
-  <main id="map-panel">
-    <div id="map"></div>
-  </main>
-</div>
+      <div class="card small">
+        <div class="big">Architecture notes</div>
+        <p>Fetches OpenAQ + weather. TEMPO overlay fallback. Chart shows PM2.5. Mock data used if APIs fail.</p>
+        <p class="muted">No IP-based tracking. Fully browser geolocation compliant.</p>
+      </div>
 
-<footer>
-  <div class="small">NASA Space Apps — RHHS Aerospace Team. Uses OpenAQ and NASA GIBS. Sandbox safe.</div>
-</footer>
+      <div class="card">
+        <div class="big">Self-test output</div>
+        <div id="test-log">(press "Run self-tests")</div>
+      </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+    </aside>
 
-<script>
+    <main id="map-panel">
+      <div id="map"></div>
+    </main>
+  </div>
+
+  <footer>
+    <div class="small">Prototype for NASA Space Apps — RHHS Aerospace Team. Uses OpenAQ and NASA data. Sandbox safe.</div>
+  </footer>
+
+  <!-- External libs -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+
+  <script>
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
-// TEMPO-like satellite overlay (NASA GIBS / proxy)
-const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
-  layers: 'OMNO2d',
-  format: 'image/png',
-  transparent: true,
-  attribution: 'NASA GIBS'
-}).addTo(map);
-
-// NOAA wind overlay proxy
-const windLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/arcgis/services/nowcoast/analysis_meteohydro_sfc_rtma_time/MapServer/WMSServer', {
-  layers: '1', format:'image/png', transparent:true, attribution:'NOAA'
-}).addTo(map);
-
+let tempoLayer = L.layerGroup().addTo(map);
 let pointMarker = null;
 
-// Chart setup
 const ctx = document.getElementById('aq-chart');
 const aqChart = new Chart(ctx, {
   type:'line',
@@ -140,61 +130,32 @@ function getAQColor(v){
   return '#FF4136';
 }
 
-function addAlert(msg){
-  const ul=document.getElementById('alerts-list');
-  const li=document.createElement('li'); 
-  li.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`; 
-  ul.prepend(li);
+function createMockTempoOverlay(lat, lon){
+  tempoLayer.clearLayers();
+  const grid = L.layerGroup();
+  const step = 0.05;
+  for(let dx=-0.2; dx<=0.2; dx+=step){
+    for(let dy=-0.2; dy<=0.2; dy+=step){
+      const cellLat=lat+dx, cellLon=lon+dy;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      const base=Math.max(5, 60-dist*150+(lat+lon)%15);
+      const value=Math.round(base+(Math.random()-0.5)*10);
+      const circle=L.circle([cellLat,cellLon], {radius:5000, fillColor:getAQColor(value), fillOpacity:0.45, stroke:false});
+      circle.bindTooltip(`PM2.5 ≈ ${value} µg/m³`);
+      grid.addLayer(circle);
+    }
+  }
+  tempoLayer.addLayer(grid);
 }
 
-function updateAQDisplay(lat, lon, data){
-  if(!data || !data.results || !data.results.length) return;
-  const measurement = data.results[0].measurements.find(m=>m.parameter==='pm25');
-  if(!measurement) return;
-
-  const label = new Date(measurement.lastUpdated).toLocaleTimeString();
-  aqChart.data.labels.push(label);
-  aqChart.data.datasets[0].data.push(measurement.value);
-  if(aqChart.data.labels.length>24){ aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); }
-  aqChart.update();
-
-  document.getElementById('aq-details').innerHTML = `
-    PM2.5: <b>${measurement.value} µg/m³</b><br>
-    Last updated: ${new Date(measurement.lastUpdated).toLocaleString()}
-  `;
-
-  if(pointMarker) map.removeLayer(pointMarker);
-  pointMarker = L.circleMarker([lat, lon], {
-    radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8
-  }).addTo(map);
-  pointMarker.bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
-
-  const thresh = Number(document.getElementById('alert-thresh').value);
-  if(measurement.value > thresh) addAlert(`High AQI detected: ${measurement.value} µg/m³`);
-}
-
-// Fetch OpenAQ data with fallback
 async function fetchOpenAQ(lat, lon, allowMock=true){
   if(!navigator.onLine) return allowMock ? sampleOpenAQ(lat,lon) : null;
-  const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
-  try{ const r = await fetch(url); if(!r.ok) return allowMock ? sampleOpenAQ(lat,lon) : null; return await r.json(); }
+  const url=`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
+  try{ const r=await fetch(url); if(!r.ok) return allowMock ? sampleOpenAQ(lat,lon) : null; return await r.json(); }
   catch(e){ return allowMock ? sampleOpenAQ(lat,lon) : null; }
 }
 
-async function handleLocation(lat, lon){
-  // Just update AQ chart + marker; satellite overlay already live
-  const aq = await fetchOpenAQ(lat, lon);
-  updateAQDisplay(lat, lon, aq);
-}
-
-map.on('click', e => handleLocation(e.latlng.lat, e.latlng.lng));
-document.getElementById('loc-btn').addEventListener('click', () => {
-  if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(p => handleLocation(p.coords.latitude, p.coords.longitude));
-  } else alert('Geolocation not supported.');
-});
-
-document.getElementById('run-tests').addEventListener('click', () => logTest('All systems nominal'));
-</script>
-</body>
-</html>
+function addAlert(msg){
+  const ul=document.getElementById('alerts-list');
+  const li=document.createElement('li'); 
+  li.text

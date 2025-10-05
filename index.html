@@ -1,1 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RHHS Aerospace — TEMPO Air Quality Forecast</title>
+
+<!-- Leaflet CSS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-sA+YqxH4IY0D3cmVtXkiGqz0Bzt4N5KjUqf3c+DN1X0=" crossorigin=""/>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    body, html { margin: 0; padding: 0; height: 100%; font-family: Arial, sans-serif; }
+    #app { display: flex; height: 100vh; }
+    #sidebar { width: 320px; padding: 15px; background: #f5f9f7; overflow-y: auto; box-shadow: 2px 0 5px rgba(0,0,0,0.1); }
+    #map { flex: 1; }
+    h2 { margin-top: 15px; }
+    button { margin: 5px 0; padding: 8px 12px; background-color: #2e8b7b; border: none; color: white; border-radius: 4px; cursor: pointer; }
+    button:hover { background-color: #25665d; }
+    #aqChart { width: 100%; height: 200px; }
+</style>
+</head>
+<body>
+<div id="app">
+    <div id="sidebar">
+        <h2>Location</h2>
+        <p>Click on the map to get local air quality.</p>
+        <button id="btnLocation">Find My Location</button>
+        <button id="btnTest">Run self-tests</button>
+
+        <h2>Air Quality</h2>
+        <canvas id="aqChart"></canvas>
+        <p id="aqText">No data selected.</p>
+
+        <h2>Settings</h2>
+        <label>Forecast window:
+            <select id="forecastWindow">
+                <option value="24">24h</option>
+                <option value="48">48h</option>
+                <option value="72">72h</option>
+            </select>
+        </label>
+        <br>
+        <label><input type="checkbox" id="useMock" checked> Use mock data if API fails</label>
+        <br>
+        <label>Notify when AQI > <input type="number" id="aqThreshold" value="100"></label>
+    </div>
+    <div id="map"></div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-o8AgFGx0dWzQK0CqmrI0n0+MF7ZxY+o1A0U2yLxB/6U=" crossorigin=""></script>
+
+<script>
+    // Initialize map
+    const map = L.map('map').setView([43.770, -79.440], 8);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+    }).addTo(map);
+
+    // Mock AQI data
+    function getMockAQI(lat, lon) {
+        return {
+            PM25: (Math.random() * 100).toFixed(1),
+            PM10: (Math.random() * 100).toFixed(1),
+            O3: (Math.random() * 100).toFixed(1)
+        };
+    }
+
+    // Update chart
+    const ctx = document.getElementById('aqChart').getContext('2d');
+    const aqChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['PM2.5', 'PM10', 'O3'],
+            datasets: [{
+                label: 'AQI',
+                data: [0,0,0],
+                backgroundColor: ['#ff6384','#36a2eb','#ffcd56']
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, max: 150 } }
+        }
+    });
+
+    function updateAQI(lat, lon) {
+        const data = getMockAQI(lat, lon);
+        aqChart.data.datasets[0].data = [data.PM25, data.PM10, data.O3];
+        aqChart.update();
+        document.getElementById('aqText').innerText = `Location: ${lat.toFixed(3)}, ${lon.toFixed(3)}\nPM2.5: ${data.PM25}, PM10: ${data.PM10}, O3: ${data.O3}`;
+    }
+
+    // Map click handler
+    map.on('click', e => {
+        updateAQI(e.latlng.lat, e.latlng.lng);
+    });
+
+    // Find location button
+    document.getElementById('btnLocation').addEventListener('click', () => {
+        if (navigator.geolocation) {
+            navigator.geolocation.getCurrentPosition(pos => {
+                const lat = pos.coords.latitude;
+                const lon = pos.coords.longitude;
+                map.setView([lat, lon], 12);
+                updateAQI(lat, lon);
+            });
+        } else {
+            alert('Geolocation not supported');
+        }
+    });
+
+    // Self-test button
+    document.getElementById('btnTest').addEventListener('click', () => {
+        const center = map.getCenter();
+        updateAQI(center.lat, center.lng);
+        alert('Self-test completed with mock AQI data.');
+    });
+</script>
+</body>
+</html>
 

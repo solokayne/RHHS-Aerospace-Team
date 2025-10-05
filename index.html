@@ -101,7 +101,6 @@
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
-// TEMPO-like satellite overlay (NASA GIBS / proxy)
 const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
   layers: 'OMNO2d',
   format: 'image/png',
@@ -109,7 +108,6 @@ const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326
   attribution: 'NASA GIBS'
 }).addTo(map);
 
-// NOAA wind overlay proxy
 const windLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/arcgis/services/nowcoast/analysis_meteohydro_sfc_rtma_time/MapServer/WMSServer', {
   layers: '1', format:'image/png', transparent:true, attribution:'NOAA'
 }).addTo(map);
@@ -120,8 +118,14 @@ let pointMarker = null;
 const ctx = document.getElementById('aq-chart');
 const aqChart = new Chart(ctx, {
   type:'line',
-  data:{ labels:[], datasets:[{ label:'PM2.5 (µg/m³)', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true }] },
-  options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true } } }
+  data:{
+    labels:[],
+    datasets:[
+      { label:'PM2.5 Observed (µg/m³)', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true },
+      { label:'PM2.5 Forecast (µg/m³)', data:[], borderColor:'#3366FF', backgroundColor:'rgba(51,102,255,0.3)', fill:true, borderDash:[5,5] }
+    ]
+  },
+  options:{ responsive:true, plugins:{ legend:{ display:true }}, scales:{ y:{ beginAtZero:true } } }
 });
 
 function logTest(msg){ 
@@ -129,9 +133,14 @@ function logTest(msg){
   el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; 
 }
 
+// Deterministic mock PM2.5
+function getMockPM25(lat, lon){
+  return Math.max(0, 10 + Math.abs(Math.sin(lat*0.1+lon*0.1))*80);
+}
+
 function sampleOpenAQ(lat, lon){
   const now = new Date().toISOString();
-  const val = (10 + Math.abs(Math.sin(lat+lon))*40 + (Math.random()*6-3)).toFixed(1);
+  const val = getMockPM25(lat, lon).toFixed(1);
   return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]};
 }
 
@@ -204,20 +213,24 @@ document.getElementById('bad-aq-toggle').addEventListener('click', () => {
   }
 });
 
-// --- Legend ---
+// --- Scientific Legend ---
 const legend = L.control({position: 'bottomright'});
 legend.onAdd = function(map){
   const div = L.DomUtil.create('div','info legend');
-  const grades = [0,12,35.4,55.4,150];
-  const labels = ['Good','Moderate','Unhealthy for Sensitive','Unhealthy','Very Unhealthy'];
-  const colors = ['#2ECC40','#FFDC00','#FF851B','#FF4136','#800000'];
   div.style.background='white';
   div.style.padding='6px';
   div.style.borderRadius='6px';
   div.style.boxShadow='0 0 8px rgba(0,0,0,0.2)';
-  for(let i=0;i<grades.length;i++){
-    div.innerHTML += `<i style="background:${colors[i]};width:18px;height:12px;display:inline-block;margin-right:6px;"></i>${labels[i]}<br>`;
-  }
+  const ranges = [
+    {label:'Good (0-12 µg/m³)', color:'#2ECC40'},
+    {label:'Moderate (12.1-35.4)', color:'#FFDC00'},
+    {label:'Unhealthy for Sensitive (35.5-55.4)', color:'#FF851B'},
+    {label:'Unhealthy (55.5-150)', color:'#FF4136'},
+    {label:'Very Unhealthy (>150)', color:'#800000'}
+  ];
+  ranges.forEach(r => {
+    div.innerHTML += `<i style="background:${r.color};width:18px;height:12px;display:inline-block;margin-right:6px;"></i>${r.label}<br>`;
+  });
   return div;
 };
 legend.addTo(map);
@@ -226,15 +239,20 @@ legend.addTo(map);
 function getForecastData(lat, lon, hours=24){
   const forecast = [];
   const now = Date.now();
-  for(let i=0;i<hours;i+=1){
-    const val = Math.max(0, (10 + Math.abs(Math.sin(lat+lon+(i/6)))*50 + (Math.random()*10-5)).toFixed(1));
-    forecast.push({time: new Date(now + i*3600*1000), value: Number(val)});
+  for(let i=0;i<hours;i++){
+    const val = Math.max(0, (10 + Math.abs(Math.sin(lat*0.1+lon*0.1+(i/6)))*50));
+    forecast.push({time: new Date(now + i*3600*1000), value: Number(val.toFixed(1))});
   }
   return forecast;
 }
 
 // --- Update AQ display with optional forecast ---
 async function handleLocation(lat, lon){
+  // Reset chart
+  aqChart.data.labels = [];
+  aqChart.data.datasets[0].data = [];
+  aqChart.data.datasets[1].data = [];
+
   const aq = await fetchOpenAQ(lat, lon);
   updateAQDisplay(lat, lon, aq);
 
@@ -243,27 +261,24 @@ async function handleLocation(lat, lon){
     const forecast = getForecastData(lat, lon, hours);
     forecast.forEach(pt => {
       aqChart.data.labels.push(pt.time.toLocaleTimeString());
-      aqChart.data.datasets[0].data.push(pt.value);
-      if(aqChart.data.labels.length > 48){
-        aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift();
-      }
+      aqChart.data.datasets[1].data.push(pt.value);
     });
     aqChart.update();
   }
 }
 
-// --- Bad AQ overlay update (mock heatmap) ---
+// --- Bad AQ overlay update ---
 function updateBadAQOverlay(){
   badAQLayer.clearLayers();
   const bounds = map.getBounds();
-  const stepLat = (bounds.getNorth()-bounds.getSouth())/10;
-  const stepLon = (bounds.getEast()-bounds.getWest())/10;
-  for(let i=0;i<10;i++){
-    for(let j=0;j<10;j++){
+  const stepLat = (bounds.getNorth()-bounds.getSouth())/15;
+  const stepLon = (bounds.getEast()-bounds.getWest())/15;
+  for(let i=0;i<15;i++){
+    for(let j=0;j<15;j++){
       const lat = bounds.getSouth() + i*stepLat;
       const lon = bounds.getWest() + j*stepLon;
-      const val = Math.random()*200; // Mock PM2.5
-      if(val>35.4){ // Only moderate+ AQ
+      const val = getMockPM25(lat, lon);
+      if(val>35.4){
         const color = val>150?'#800000':val>55.4?'#FF4136':'#FF851B';
         const rect = L.rectangle([
           [lat, lon],

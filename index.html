@@ -96,25 +96,36 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
 
 <script>
+// --- Map Initialization ---
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
-// TEMPO-like satellite overlay (NASA GIBS / proxy)
-const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
-  layers: 'OMNO2d',
-  format: 'image/png',
-  transparent: true,
-  attribution: 'NASA GIBS'
-}).addTo(map);
+// Sample overlay points for demonstration
+const overlayPoints = [
+  {lat:43.7, lon:-79.4, pm:40},
+  {lat:43.6, lon:-79.3, pm:75},
+  {lat:43.65, lon:-79.35, pm:120},
+  {lat:43.66, lon:-79.38, pm:160}
+];
 
-// NOAA wind overlay proxy
-const windLayer = L.tileLayer.wms('https://nowcoast.noaa.gov/arcgis/services/nowcoast/analysis_meteohydro_sfc_rtma_time/MapServer/WMSServer', {
-  layers: '1', format:'image/png', transparent:true, attribution:'NOAA'
-}).addTo(map);
+// Add overlay circles
+function getAQColor(v){
+  if(v <= 12) return '#2ECC40';
+  if(v <= 35.4) return '#FFDC00';
+  if(v <= 55.4) return '#FF851B';
+  return '#FF4136';
+}
+overlayPoints.forEach(d => {
+  L.circle([d.lat,d.lon], {
+    radius:1200,
+    fillColor:getAQColor(d.pm),
+    color:'#333',
+    weight:1,
+    fillOpacity:0.6
+  }).addTo(map);
+});
 
-let pointMarker = null;
-
-// Chart setup
+// --- Chart setup ---
 const ctx = document.getElementById('aq-chart');
 const aqChart = new Chart(ctx, {
   type:'line',
@@ -122,24 +133,15 @@ const aqChart = new Chart(ctx, {
   options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true } } }
 });
 
+// --- History per location ---
+const locationHistory = {};
+let pointMarker = null;
+
+// --- Helper functions ---
 function logTest(msg){ 
   const el = document.getElementById('test-log'); 
   el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; 
 }
-
-function sampleOpenAQ(lat, lon){
-  const now = new Date().toISOString();
-  const val = (10 + Math.abs(Math.sin(lat+lon))*40 + (Math.random()*6-3)).toFixed(1);
-  return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]};
-}
-
-function getAQColor(v){
-  if(v <= 12) return '#2ECC40';
-  if(v <= 35.4) return '#FFDC00';
-  if(v <= 55.4) return '#FF851B';
-  return '#FF4136';
-}
-
 function addAlert(msg){
   const ul=document.getElementById('alerts-list');
   const li=document.createElement('li'); 
@@ -147,33 +149,14 @@ function addAlert(msg){
   ul.prepend(li);
 }
 
-function updateAQDisplay(lat, lon, data){
-  if(!data || !data.results || !data.results.length) return;
-  const measurement = data.results[0].measurements.find(m=>m.parameter==='pm25');
-  if(!measurement) return;
-
-  const label = new Date(measurement.lastUpdated).toLocaleTimeString();
-  aqChart.data.labels.push(label);
-  aqChart.data.datasets[0].data.push(measurement.value);
-  if(aqChart.data.labels.length>24){ aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); }
-  aqChart.update();
-
-  document.getElementById('aq-details').innerHTML = `
-    PM2.5: <b>${measurement.value} µg/m³</b><br>
-    Last updated: ${new Date(measurement.lastUpdated).toLocaleString()}
-  `;
-
-  if(pointMarker) map.removeLayer(pointMarker);
-  pointMarker = L.circleMarker([lat, lon], {
-    radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8
-  }).addTo(map);
-  pointMarker.bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
-
-  const thresh = Number(document.getElementById('alert-thresh').value);
-  if(measurement.value > thresh) addAlert(`High AQI detected: ${measurement.value} µg/m³`);
+// Mock / sample OpenAQ data
+function sampleOpenAQ(lat, lon){
+  const now = new Date().toISOString();
+  const val = (10 + Math.abs(Math.sin(lat+lon))*40 + (Math.random()*6-3)).toFixed(1);
+  return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]};
 }
 
-// Fetch OpenAQ data with fallback
+// Fetch OpenAQ with fallback
 async function fetchOpenAQ(lat, lon, allowMock=true){
   if(!navigator.onLine) return allowMock ? sampleOpenAQ(lat,lon) : null;
   const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
@@ -181,20 +164,65 @@ async function fetchOpenAQ(lat, lon, allowMock=true){
   catch(e){ return allowMock ? sampleOpenAQ(lat,lon) : null; }
 }
 
-async function handleLocation(lat, lon){
-  // Just update AQ chart + marker; satellite overlay already live
-  const aq = await fetchOpenAQ(lat, lon);
-  updateAQDisplay(lat, lon, aq);
+// --- Update chart per location ---
+function updateAQChart(lat, lon, pm){
+  const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+  if(!locationHistory[key]) locationHistory[key] = [];
+  const history = locationHistory[key];
+  const now = new Date();
+  history.push({time: now.toLocaleTimeString(), pm});
+  if(history.length>24) history.shift();
+
+  aqChart.data.labels = history.map(h=>h.time);
+  aqChart.data.datasets[0].data = history.map(h=>h.pm);
+  aqChart.update();
 }
 
-map.on('click', e => handleLocation(e.latlng.lat, e.latlng.lng));
-document.getElementById('loc-btn').addEventListener('click', () => {
-  if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(p => handleLocation(p.coords.latitude, p.coords.longitude));
-  } else alert('Geolocation not supported.');
-});
+// --- Handle clicks / geolocation ---
+async function handleLocation(lat, lon){
+  const allowMock = document.getElementById('mock-toggle').checked;
+  const data = await fetchOpenAQ(lat, lon, allowMock);
+  if(!data || !data.results || !data.results.length) return;
 
-document.getElementById('run-tests').addEventListener('click', () => logTest('All systems nominal'));
+  const measurement = data.results[0].measurements.find(m=>m.parameter==='pm25');
+  if(!measurement) return;
+
+  updateAQChart(lat, lon, measurement.value);
+
+  document.getElementById('aq-details').innerHTML = `
+    PM2.5: <b>${measurement.value} µg/m³</b><br>
+    Last updated: ${new Date(measurement.lastUpdated).toLocaleString()}
+  `;
+
+  if(pointMarker) map.removeLayer(pointMarker);
+  pointMarker = L.circleMarker([lat,lon], {
+    radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8
+  }).addTo(map).bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
+
+  const thresh = Number(document.getElementById('alert-thresh').value);
+  if(measurement.value>thresh) addAlert(`High AQI detected: ${measurement.value} µg/m³`);
+}
+
+// --- Self-tests ---
+function runSelfTests(){
+  const logs = [];
+  logs.push(map ? "Map loaded ✅" : "Map missing ❌");
+  logs.push(overlayPoints.length ? `Overlay loaded (${overlayPoints.length} points) ✅` : "Overlay missing ❌");
+
+  fetchOpenAQ(43.65,-79.38).then(data=>{
+    logs.push(data && data.results ? "OpenAQ API works ✅" : "OpenAQ API failed ❌");
+    document.getElementById('test-log').textContent = logs.join("\n");
+  }).catch(()=>{ logs.push("OpenAQ API failed ❌"); document.getElementById('test-log').textContent = logs.join("\n"); });
+}
+
+// --- Event listeners ---
+map.on('click', e => handleLocation(e.latlng.lat,e.latlng.lng));
+document.getElementById('loc-btn').addEventListener('click', ()=>{
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(p => handleLocation(p.coords.latitude,p.coords.longitude));
+  }else alert('Geolocation not supported.');
+});
+document.getElementById('run-tests').addEventListener('click', runSelfTests);
 </script>
 </body>
 </html>

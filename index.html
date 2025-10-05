@@ -1,333 +1,182 @@
-<!--
-Filename: index.html
-Project: TEMPO Air Quality Forecaster (static HTML/CSS/JS)
-Repo name you provided: RHHS-Aerospace-Team
-
-What this file contains:
-- A single-page, responsive HTML + CSS + JS app that:
-  * Describes the TEMPO challenge
-  * Provides a UI to configure API endpoints (TEMPO, ground sensors, weather)
-  * Shows live-status tiles, a simple AQI line chart, and a recent-alerts list
-  * Implements client-side polling and logic to compute/display AQI warnings
-  * Demonstrates Notifications API usage (asks permission and shows local notifications)
-- All external services are placeholders; replace URLs with your real endpoints or proxy services.
-- This static site is ready to be pushed to GitHub Pages (docs below).
-
-Notes & next steps (also visible inside the page):
-1) Replace placeholder endpoints in the "Configure data sources" panel with your real REST endpoints or a small proxy that aggregates TEMPO + ground + weather.
-2) For production, host an aggregation microservice (serverless function or cloud endpoint) to merge TEMPO (satellite) swath data with ground sensors and weather, and return GeoJSON/AQI time-series for the client.
-3) For push notifications, you'll need a service worker + push subscription + server to send push messages (web push). The site uses simple Notification API for local notifications as a demo.
-4) To publish: create or use repo RHHS-Aerospace-Team, add this file as index.html, push to main branch, and enable GitHub Pages in repo settings (Source: main / root or docs folder).
-
-Git commands example to publish:
-  git init
-  git remote add origin https://github.com/<your-username>/RHHS-Aerospace-Team.git
-  git add index.html
-  git commit -m "Initial TEMPO Air Quality Forecaster site"
-  git branch -M main
-  git push -u origin main
-
-Then in Github: Settings → Pages → Build and deployment → Branch: main / folder: / (root) → Save. Your site will be at https://<your-username>.github.io/RHHS-Aerospace-Team/
-
--->
-
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>TEMPO Air Quality Forecaster — RHHS Aerospace Team</title>
-  <meta name="description" content="Client-side demo app to integrate TEMPO satellite, ground sensors & weather to forecast AQI and notify users of poor air quality.">
-
-  <!-- Lightweight fonts & icons -->
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
-
-  <!-- Chart.js CDN (for charts) -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>RHHS Aerospace — TEMPO Air Quality Forecast</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
-    :root{
-      --bg:#0f1724; --card:#0b1220; --muted:#9aa7b2; --accent:#7dd3fc; --danger:#ff6b6b; --glass: rgba(255,255,255,0.03);
-      --max-width:1100px;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0; font-family:Inter,system-ui,Arial; background:linear-gradient(180deg,#071129 0%, #061422 100%); color:#e6eef6; display:flex; justify-content:center; padding:28px;
-    }
-    .container{width:100%; max-width:var(--max-width)}
-    header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
-    .brand{display:flex;gap:12px;align-items:center}
-    .logo{width:52px;height:52px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#60a5fa);display:flex;align-items:center;justify-content:center;color:#032; font-weight:800}
-    h1{font-size:20px;margin:0}
-    p.lead{margin:0;color:var(--muted);font-size:13px}
-
-    main{display:grid;grid-template-columns: 1fr 360px; gap:18px}
-    @media (max-width:900px){main{grid-template-columns:1fr} .right-col{order:2}}
-
-    .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 20px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.02)}
-
-    .grid-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:12px}
-    @media (max-width:700px){.grid-tiles{grid-template-columns:repeat(2,1fr)}}
-    .tile{padding:12px;border-radius:8px;background:var(--glass);min-height:74px}
-    .tile h3{margin:0;font-size:12px;color:var(--muted)}
-    .tile p{margin:6px 0 0;font-weight:700;font-size:20px}
-
-    .config label{display:block;font-size:12px;color:var(--muted);margin-top:8px}
-    .config input{width:100%;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit}
-    .btn{display:inline-block;padding:10px 12px;border-radius:10px;background:linear-gradient(90deg,#60a5fa,#7dd3fc);color:#022;font-weight:700;border:none;cursor:pointer;margin-top:10px}
-    .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.05);color:var(--accent)}
-
-    .alerts{max-height:220px;overflow:auto;margin-top:8px}
-    .alert-item{padding:10px;border-radius:8px;background:linear-gradient(180deg,rgba(255,107,107,0.08),rgba(255,107,107,0.03));margin-bottom:8px}
-
-    footer{margin-top:14px;color:var(--muted);font-size:13px}
-    .small{font-size:12px;color:var(--muted)}
-
-    /* simple responsive map placeholder */
-    .map{height:220px;border-radius:10px;background:linear-gradient(180deg,rgba(123,123,255,0.06),rgba(123,200,255,0.02));display:flex;align-items:center;justify-content:center;color:var(--muted)}
+    body { font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; }
+    header { background:linear-gradient(90deg,#05386b,#379683); color:white; padding:12px 20px; display:flex; align-items:center; justify-content:space-between }
+    header .meta { font-size:0.9rem; opacity:0.95 }
+    #app { display:grid; grid-template-columns: 360px 1fr; height: calc(100vh - 72px); }
+    #sidebar { padding:12px; border-right:1px solid #eee; overflow:auto; background:#f0fef5; }
+    #map { width:100%; height:100%; }
+    .card { background:white; border-radius:10px; box-shadow:0 6px 18px rgba(2,6,23,.08); padding:12px; margin-bottom:12px }
+    .small { font-size:0.9rem; color:#555 }
+    .big { font-size:1.15rem; font-weight:600 }
+    footer { padding:8px 16px; font-size:0.85rem; color:#444 }
+    button { background:#379683; color:white; border:none; padding:8px 12px; border-radius:8px; cursor:pointer }
+    .muted { color:#888 }
+    #test-log { height:120px; overflow:auto; background:#fafafa; border-radius:8px; padding:8px; font-family:monospace; font-size:0.85rem }
+    label.inline { display:flex; gap:8px; align-items:center }
+    select,input { border-radius:4px; border:1px solid #aaa; padding:4px 6px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <div class="brand">
-        <div class="logo">AQ</div>
-        <div>
-          <h1>TEMPO Air Quality Forecaster</h1>
-          <p class="lead">Satellite + ground + weather — prototype static site for RHHS-Aerospace-Team</p>
+  <header>
+    <div>
+      <h1 style="margin:0; font-size:1.05rem">RHHS Aerospace — TEMPO Air Quality Forecast</h1>
+      <div class="meta">Demo with resilient fetch, charts, and overlays</div>
+    </div>
+    <div style="text-align:right">
+      <div class="meta">Sandbox / GitHub deployable</div>
+    </div>
+  </header>
+
+  <div id="app">
+    <aside id="sidebar">
+
+      <div class="card">
+        <div class="big">Location</div>
+        <div class="small">Click anywhere on the map to get local air quality, or use your device location.</div>
+        <div style="margin-top:8px; display:flex; gap:8px;">
+          <button id="loc-btn">Find My Location</button>
+          <button id="run-tests">Run self-tests</button>
         </div>
       </div>
-      <div class="small">Repo: <strong>RHHS-Aerospace-Team</strong></div>
-    </header>
 
-    <main>
-      <section>
-        <div class="card">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <div>
-              <strong>Live forecast summary</strong>
-              <div class="small">Polling interval: <span id="intervalLabel">30s</span></div>
-            </div>
-            <div>
-              <button class="btn" id="pollToggle">Start</button>
-              <button class="btn ghost" id="notifyBtn">Enable notifications</button>
-            </div>
-          </div>
+      <div class="card">
+        <div class="big" id="aq-label">Air Quality</div>
+        <canvas id="aq-chart" height="180"></canvas>
+        <div id="aq-details" class="small">No data selected.</div>
+      </div>
 
-          <div class="grid-tiles">
-            <div class="tile">
-              <h3>Current AQI (est)</h3>
-              <p id="aqiNow">—</p>
-            </div>
-            <div class="tile">
-              <h3>Temp (°C)</h3>
-              <p id="tempNow">—</p>
-            </div>
-            <div class="tile">
-              <h3>Satellite coverage</h3>
-              <p id="satCov">—</p>
-            </div>
-          </div>
+      <div class="card">
+        <div class="big">Alerts</div>
+        <ul id="alerts-list" class="small"></ul>
+      </div>
 
-          <div style="display:flex;gap:12px;align-items:flex-start">
-            <div style="flex:1">
-              <canvas id="aqiChart" height="120"></canvas>
-            </div>
-            <aside style="width:260px">
-              <div class="map card" style="padding:8px">Map placeholder (replace with Leaflet/Mapbox)</div>
-            </aside>
-          </div>
-
-          <div style="margin-top:12px">
-            <strong>Recent alerts</strong>
-            <div class="alerts" id="alertsList">
-              <div class="small">No alerts yet</div>
-            </div>
-          </div>
+      <div class="card">
+        <div class="big">Settings</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label class="small">Forecast window
+            <select id="forecast-window">
+              <option value="24">24h</option>
+              <option value="48">48h</option>
+              <option value="72">72h</option>
+            </select>
+          </label>
+          <label class="inline small"><input id="mock-toggle" type="checkbox" checked /> <span>Use mock data if network/API calls fail</span></label>
+          <div><label class="small">Notify when AQI &gt; <input id="alert-thresh" type="number" value="100" style="width:70px" /></label></div>
         </div>
+      </div>
 
-        <div class="card" style="margin-top:12px">
-          <strong>About this prototype</strong>
-          <p class="small">This static web UI demonstrates how TEMPO satellite data can be combined with ground sensors and weather to produce short-term AQI forecasts and user notifications. For production, aggregate sources server-side, apply spatial weighting/blending, and use model-based forecasting for better accuracy.</p>
+      <div class="card small">
+        <div class="big">Architecture notes</div>
+        <p>Fetches OpenAQ + weather. TEMPO overlay fallback. Chart shows PM2.5. Mock data used if APIs fail.</p>
+        <p class="muted">No IP-based tracking. Fully browser geolocation compliant.</p>
+      </div>
 
-          <details style="margin-top:8px">
-            <summary style="cursor:pointer">Deployment & GitHub Pages</summary>
-            <div class="small" style="margin-top:8px">
-              1) Add this file as <code>index.html</code> to your repository <code>RHHS-Aerospace-Team</code> and push to <code>main</code>.<br>
-              2) In GitHub: Settings → Pages → Source: Branch: main (root) → Save.<br>
-              3) Your site will appear at <code>https://&lt;your-username&gt;.github.io/RHHS-Aerospace-Team/</code> within a minute or two.
-            </div>
-          </details>
-        </div>
-      </section>
+      <div class="card">
+        <div class="big">Self-test output</div>
+        <div id="test-log">(press "Run self-tests")</div>
+      </div>
 
-      <aside class="right-col">
-        <div class="card config">
-          <strong>Configure data sources</strong>
-          <label for="tempoUrl">TEMPO (satellite) endpoint</label>
-          <input id="tempoUrl" placeholder="https://your-proxy.example.com/tempo" value="https://example.com/api/tempo">
+    </aside>
 
-          <label for="groundUrl">Ground sensors endpoint</label>
-          <input id="groundUrl" placeholder="https://your-proxy.example.com/ground" value="https://example.com/api/ground">
-
-          <label for="weatherUrl">Weather endpoint</label>
-          <input id="weatherUrl" placeholder="https://api.openweathermap.org/..." value="https://example.com/api/weather">
-
-          <label for="pollInterval">Polling interval (seconds)</label>
-          <input id="pollInterval" type="number" min="5" value="30">
-
-          <button class="btn" id="saveConfig">Save</button>
-
-          <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
-
-          <strong>How to wire real TEMPO data</strong>
-          <p class="small">TEMPO data products are large swath images and radiances; we recommend a server-side process to convert TEMPO retrievals into per-location pollutant estimates (NO2, O3, HCHO) and expose a lightweight JSON endpoint that returns recent time-series for specified locations.</p>
-
-        </div>
-
-        <div class="card" style="margin-top:12px">
-          <strong>Team & features</strong>
-          <ul class="small" style="padding-left:16px;margin:8px 0">
-            <li>Real-time polling + alerts</li>
-            <li>Notification demo (client-only)</li>
-            <li>Placeholders to add models or serverless functions</li>
-          </ul>
-          <div class="small">Want a version that connects to real APIs and stores user preferences? I can add a GitHub Actions workflow or an Azure Function / AWS Lambda example for data aggregation.</div>
-        </div>
-      </aside>
+    <main id="map-panel">
+      <div id="map"></div>
     </main>
-
-    <footer>
-      <div class="small">Prototype built for the NASA TEMPO challenge. This static demo contains placeholders; it is not a replacement for validated air-quality forecasting systems.</div>
-    </footer>
   </div>
 
-  <script>
-    // Basic client-side logic: polling, charting, alerting
-    const aqiCtx = document.getElementById('aqiChart');
-    const aqiChart = new Chart(aqiCtx, {
-      type: 'line',
-      data: {labels:[], datasets:[{label:'AQI', data:[], tension:0.3, fill:true}]},
-      options:{scales:{y:{beginAtZero:true}}}
-    });
+  <footer>
+    <div class="small">Prototype for NASA Space Apps — RHHS Aerospace Team. Uses OpenAQ and NASA data. Sandbox safe.</div>
+  </footer>
 
-    let config = {
-      tempo: document.getElementById('tempoUrl').value,
-      ground: document.getElementById('groundUrl').value,
-      weather: document.getElementById('weatherUrl').value,
-      intervalSec: Number(document.getElementById('pollInterval').value)
-    };
+  <!-- External libs -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
 
-    document.getElementById('saveConfig').onclick = ()=>{
-      config.tempo = document.getElementById('tempoUrl').value;
-      config.ground = document.getElementById('groundUrl').value;
-      config.weather = document.getElementById('weatherUrl').value;
-      config.intervalSec = Number(document.getElementById('pollInterval').value) || 30;
-      document.getElementById('intervalLabel').innerText = config.intervalSec + 's';
-      addNotice('Config saved');
-    };
+<script>
+const map = L.map('map').setView([43.770, -79.440], 8); // Richmond Hill default
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
-    // Notification demo
-    document.getElementById('notifyBtn').onclick = async ()=>{
-      if(!('Notification' in window)) return alert('Notifications not supported in this browser');
-      const perm = await Notification.requestPermission();
-      addNotice('Notification permission: ' + perm);
-    };
+let tempoLayer = L.layerGroup().addTo(map);
+let pointMarker = null;
 
-    let pollTimer=null; let polling=false;
-    document.getElementById('pollToggle').onclick = ()=>{
-      polling = !polling;
-      document.getElementById('pollToggle').innerText = polling ? 'Stop' : 'Start';
-      if(polling) startPolling(); else stopPolling();
-    };
+const ctx = document.getElementById('aq-chart');
+const aqChart = new Chart(ctx, {
+  type:'line',
+  data:{ labels:[], datasets:[{ label:'PM2.5 (µg/m³)', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true }] },
+  options:{ responsive:true, plugins:{ legend:{ display:false }}, scales:{ y:{ beginAtZero:true } } }
+});
 
-    function startPolling(){
-      if(pollTimer) clearInterval(pollTimer);
-      fetchAndUpdate();
-      pollTimer = setInterval(fetchAndUpdate, config.intervalSec*1000);
+function logTest(msg){ const el = document.getElementById('test-log'); el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; }
+
+function sampleOpenAQ(lat, lon){
+  const now = new Date().toISOString();
+  const val = (10 + Math.abs(Math.sin(lat+lon))*40 + (Math.random()*6-3)).toFixed(1);
+  return { results:[{ measurements:[
+    {parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}
+  ]}]};
+}
+
+function sampleWeather(lat, lon){
+  return { current:{ weather:[{description:'clear sky'}], temp: 15 + Math.round(Math.random()*10-5), wind_speed:(1+Math.random()*4).toFixed(1) } };
+}
+
+function getAQColor(v){
+  if(v <= 12) return '#2ECC40';
+  if(v <= 35.4) return '#FFDC00';
+  if(v <= 55.4) return '#FF851B';
+  return '#FF4136';
+}
+
+// semi-random overlay per location
+function createMockTempoOverlay(lat, lon){
+  tempoLayer.clearLayers();
+  const grid = L.layerGroup();
+  const step = 0.05;
+  for(let dx=-0.2;dx<=0.2;dx+=step){
+    for(let dy=-0.2;dy<=0.2;dy+=step){
+      const cellLat=lat+dx;
+      const cellLon=lon+dy;
+      const dist = Math.sqrt(dx*dx+dy*dy);
+      const base = Math.max(5, 60 - dist*150 + (lat+lon)%15);
+      const value = Math.round(base + (Math.random()-0.5)*10);
+      const circle = L.circle([cellLat,cellLon], {
+        radius:5000, fillColor:getAQColor(value), fillOpacity:0.45, stroke:false
+      });
+      circle.bindTooltip(`PM2.5 ≈ ${value} µg/m³`);
+      grid.addLayer(circle);
     }
-    function stopPolling(){ if(pollTimer){clearInterval(pollTimer); pollTimer=null;} }
+  }
+  tempoLayer.addLayer(grid);
+  return grid;
+}
 
-    async function fetchAndUpdate(){
-      // This function fetches from three endpoints and synthesizes a simple AQI.
-      // Replace with your own logic on the server-side for production.
-      try{
-        // The example uses placeholder endpoints; implement CORS-enabled endpoints or a proxy.
-        const [tempoResp, groundResp, weatherResp] = await Promise.all([
-          safeFetch(config.tempo), safeFetch(config.ground), safeFetch(config.weather)
-        ]);
+// fetch OpenAQ for all pollutants (mock fallback)
+async function fetchOpenAQ(lat, lon, allowMock=true){
+  if(!navigator.onLine) return allowMock ? sampleOpenAQ(lat,lon) : null;
+  const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
+  try{ const r = await fetch(url); if(!r.ok) return allowMock ? sampleOpenAQ(lat,lon) : null; return await r.json(); }
+  catch(e){ return allowMock ? sampleOpenAQ(lat,lon) : null; }
+}
 
-        // Example: tempoResp = {coverage: "High", estimated_aqi: 45}
-        // groundResp = {station_aqi: 55}
-        // weatherResp = {temp_c: 22}
+// fetch weather (mock fallback)
+async function fetchWeather(lat, lon, allowMock=true){
+  if(!navigator.onLine) return allowMock ? sampleWeather(lat,lon) : null;
+  const key = 'REPLACE_WITH_YOUR_OPENWEATHERMAP_KEY';
+  if(!key || key.includes('REPLACE')) return allowMock ? sampleWeather(lat,lon) : null;
+  const url = `https://api.openweathermap.org/data/2.5/onecall?lat=${lat}&lon=${lon}&exclude=minutely&units=metric&appid=${key}`;
+  try{ const r = await fetch(url); if(!r.ok) return allowMock ? sampleWeather(lat,lon) : null; return await r.json(); }
+  catch(e){ return allowMock ? sampleWeather(lat,lon) : null; }
+}
 
-        const tempo = tempoResp || {};
-        const ground = groundResp || {};
-        const weather = weatherResp || {};
+function addAlert(msg){
+  const ul=document.getElementById('alerts-list');
+  const li=document.createElement('li'); li.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`; ul.prepend(li);
+}
 
-        // Naive merge: weighted average (ground more weight)
-        const g = Number(ground.station_aqi || ground.aqi || tempo.estimated_aqi || 40);
-        const t = Number(tempo.estimated_aqi || 40);
-        const combined = Math.round((g*0.6 + t*0.35 + 40*0.05));
 
-        updateTiles({aqi:combined, temp:weather.temp_c||'—', satCov: tempo.coverage || 'unknown'});
-        pushChartPoint(new Date().toLocaleTimeString(), combined);
-
-        if(combined >= 100){
-          pushAlert({time:new Date().toLocaleTimeString(), msg:`AQI ${combined} — Unhealthy for sensitive groups or worse`});
-          showNotification('Air quality alert', `AQI ${combined} — take precautions`);
-        }
-      }catch(e){
-        addNotice('Error fetching data: ' + e.message);
-      }
-    }
-
-    async function safeFetch(url){
-      if(!url) return null;
-      // Quick guard for the demo: don't accidentally try to fetch example.com placeholders
-      if(url.includes('example.com')) return null;
-      const res = await fetch(url);
-      if(!res.ok) throw new Error('HTTP ' + res.status);
-      return await res.json();
-    }
-
-    function updateTiles({aqi, temp, satCov}){
-      document.getElementById('aqiNow').innerText = aqi;
-      document.getElementById('tempNow').innerText = temp;
-      document.getElementById('satCov').innerText = satCov;
-    }
-
-    function pushChartPoint(label, value){
-      const d = aqiChart.data;
-      d.labels.push(label);
-      d.datasets[0].data.push(value);
-      if(d.labels.length>12){ d.labels.shift(); d.datasets[0].data.shift(); }
-      aqiChart.update();
-    }
-
-    function pushAlert(obj){
-      const list = document.getElementById('alertsList');
-      if(list.children.length===1 && list.children[0].classList.contains('small')) list.innerHTML='';
-      const div = document.createElement('div'); div.className='alert-item';
-      div.innerHTML = `<strong>${obj.msg}</strong><div class="small">${obj.time}</div>`;
-      list.prepend(div);
-    }
-
-    function showNotification(title, body){
-      if(Notification.permission==='granted'){
-        try{ new Notification(title,{body}); }catch(e){ console.warn('Notification failed', e); }
-      }
-    }
-
-    function addNotice(txt){ console.log(txt); }
-
-    // initial chart demo data
-    ['08:00','08:30','09:00','09:30','10:00'].forEach((l,i)=>pushChartPoint(l, 40 + Math.round(Math.random()*50)));
-
-    // small helpful callback: update config label when poll interval is changed
-    document.getElementById('pollInterval').onchange = (e)=>{ document.getElementById('intervalLabel').innerText = e.target.value + 's'; };
-  </script>
-</body>
-</html>

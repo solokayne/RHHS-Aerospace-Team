@@ -101,66 +101,66 @@ select,input { border-radius:4px; border:1px solid #aaa; padding:4px 6px; }
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 <script>
-// --- Map Init ---
+// --- Map ---
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
 // --- Legend ---
 const legend=L.control({position:'bottomright'});
 legend.onAdd=function(){
-    const div=L.DomUtil.create('div','legend');
-    [['#2ECC40','Good (0-12)'],['#FFDC00','Moderate (12-35.4)'],['#FF851B','Unhealthy Sensitive (35.5-55.4)'],['#FF4136','Unhealthy (55.5-150.4)'],['#800000','Very Unhealthy (>150.4)']].forEach(g=>{
-        div.innerHTML+=`<i style="background:${g[0]}"></i>${g[1]}<br>`;
-    });
-    return div;
+  const div=L.DomUtil.create('div','legend');
+  [['#2ECC40','Good (0-12)'],['#FFDC00','Moderate (12-35.4)'],['#FF851B','Unhealthy Sensitive (35.5-55.4)'],['#FF4136','Unhealthy (55.5-150.4)'],['#800000','Very Unhealthy (>150.4)']].forEach(g=>{
+      div.innerHTML+=`<i style="background:${g[0]}"></i>${g[1]}<br>`;
+  });
+  return div;
 };
 legend.addTo(map);
 
 // --- Chart ---
 const ctx = document.getElementById('aq-chart');
 const aqChart = new Chart(ctx,{
-    type:'line',
-    data:{
-        labels:[],
-        datasets:[
-            {label:'PM2.5 Observed', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true},
-            {label:'PM2.5 Forecast', data:[], borderColor:'#3366FF', backgroundColor:'rgba(51,102,255,0.3)', fill:true, borderDash:[5,5], hidden:true}
-        ]
-    },
-    options:{ responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}} }
+  type:'line',
+  data:{
+    labels:[],
+    datasets:[
+      {label:'PM2.5 Observed', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true},
+      {label:'PM2.5 Forecast', data:[], borderColor:'#3366FF', backgroundColor:'rgba(51,102,255,0.3)', fill:true, borderDash:[5,5], hidden:true}
+    ]
+  },
+  options:{ responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}} }
 });
 
-// --- AQ Mock ---
+// --- Mock AQ ---
 function sampleAQ(lat,lon){
-    const now=new Date().toISOString();
-    const val=Math.max(0,10+Math.abs(Math.sin(lat*0.1+lon*0.1))*80);
-    return {results:[{measurements:[{parameter:'pm25',value:val,unit:'µg/m³',lastUpdated:now}]}]};
+  const now=new Date().toISOString();
+  const val=Math.max(0,10+Math.abs(Math.sin(lat*0.1+lon*0.1))*80);
+  return {results:[{measurements:[{parameter:'pm25',value:val,unit:'µg/m³',lastUpdated:now}]}]};
 }
 
 // --- Update AQ ---
-let pointMarker=null,currentLat=null,currentLon=null;
+let pointMarker=null;
 async function updateAQ(lat,lon,data){
-    if(!data||!data.results.length) return;
-    const m = data.results[0].measurements.find(x=>x.parameter==='pm25'); if(!m) return;
-    const label = new Date(m.lastUpdated).toLocaleTimeString();
-    aqChart.data.labels.push(label);
-    aqChart.data.datasets[0].data.push(m.value);
+  if(!data||!data.results.length) return;
+  const m = data.results[0].measurements.find(x=>x.parameter==='pm25'); if(!m) return;
+  const label = new Date(m.lastUpdated).toLocaleTimeString();
+  aqChart.data.labels.push(label);
+  aqChart.data.datasets[0].data.push(m.value);
 
-    // Forecast mock
-    const forecastVal = Math.max(0, m.value + Math.random()*20-10);
-    aqChart.data.datasets[1].data.push(forecastVal);
+  // Forecast mock
+  const forecastVal = Math.max(0, m.value + Math.random()*20-10);
+  aqChart.data.datasets[1].data.push(forecastVal);
 
-    if(aqChart.data.labels.length>24){
-        aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); aqChart.data.datasets[1].data.shift();
-    }
-    aqChart.update();
+  if(aqChart.data.labels.length>24){
+    aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); aqChart.data.datasets[1].data.shift();
+  }
+  aqChart.update();
 
-    if(pointMarker) map.removeLayer(pointMarker);
-    pointMarker=L.circleMarker([lat,lon],{radius:12,fillColor:'#FF5733',color:'#333',weight:1,fillOpacity:0.8}).addTo(map);
-    pointMarker.bindPopup(`PM2.5: ${m.value.toFixed(1)} µg/m³`).openPopup();
+  if(pointMarker) map.removeLayer(pointMarker);
+  pointMarker=L.circleMarker([lat,lon],{radius:12,fillColor:'#FF5733',color:'#333',weight:1,fillOpacity:0.8}).addTo(map);
+  pointMarker.bindPopup(`PM2.5: ${m.value.toFixed(1)} µg/m³`).openPopup();
 
-    const thresh = Number(document.getElementById('alert-thresh').value);
-    if(m.value>thresh) addAlert(`High AQI detected: ${m.value.toFixed(1)} µg/m³`);
+  const thresh = Number(document.getElementById('alert-thresh').value);
+  if(m.value>thresh) addAlert(`High AQI detected: ${m.value.toFixed(1)} µg/m³`);
 }
 
 // --- Alerts ---
@@ -168,19 +168,18 @@ function addAlert(msg){ const ul=document.getElementById('alerts-list'); const l
 
 // --- Fetch AQ ---
 async function fetchAQ(lat,lon,allowMock=true){
-    if(!navigator.onLine) return allowMock?sampleAQ(lat,lon):null;
-    try{
-        const res = await fetch(`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`);
-        if(!res.ok) return allowMock?sampleAQ(lat,lon):null; 
-        return await res.json();
-    }catch(e){ return allowMock?sampleAQ(lat,lon):null; }
+  if(!navigator.onLine) return allowMock?sampleAQ(lat,lon):null;
+  try{
+    const res = await fetch(`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`);
+    if(!res.ok) return allowMock?sampleAQ(lat,lon):null; 
+    return await res.json();
+  }catch(e){ return allowMock?sampleAQ(lat,lon):null; }
 }
 
 // --- Handle Location ---
 async function handleLocation(lat, lon){
-    currentLat = lat; currentLon = lon;
-    const data = await fetchAQ(lat, lon, document.getElementById('mock-toggle').checked);
-    updateAQ(lat, lon, data);
+  const data = await fetchAQ(lat, lon, document.getElementById('mock-toggle').checked);
+  updateAQ(lat, lon, data);
 }
 
 map.on('click',e=>handleLocation(e.latlng.lat,e.latlng.lng));
@@ -188,39 +187,28 @@ document.getElementById('loc-btn').addEventListener('click',()=>{ if(navigator.g
 document.getElementById('run-tests').addEventListener('click',()=>document.getElementById('test-log').textContent='[INFO] All systems nominal');
 
 // --- Forecast Toggle ---
-let forecastEnabled=false; 
 document.getElementById('forecast-toggle').addEventListener('click',()=>{ 
-    forecastEnabled=!forecastEnabled; 
-    aqChart.data.datasets[1].hidden=!forecastEnabled; 
-    aqChart.update();
+  aqChart.data.datasets[1].hidden = !aqChart.data.datasets[1].hidden; 
+  aqChart.update();
 });
 
-// --- PM2.5 Overlay ---
-let pm25OverlayEnabled=false, pm25Layer=null;
+// --- Heatmap Overlays ---
+let pm25Layer=null, tempoLayer=null;
+
 document.getElementById('pm25-overlay-toggle').addEventListener('click',()=>{
-    pm25OverlayEnabled=!pm25OverlayEnabled;
-    if(pm25OverlayEnabled){
-        if(!pm25Layer){
-            const data=[{lat:43.7,lon:-79.42,value:35},{lat:43.8,lon:-79.43,value:50},{lat:43.9,lon:-79.44,value:65}];
-            const points=data.map(d=>[d.lat,d.lon,d.value/150]); // normalized
-            pm25Layer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
-        }
-        map.addLayer(pm25Layer);
-    }else if(pm25Layer){ map.removeLayer(pm25Layer);}
+  if(pm25Layer && map.hasLayer(pm25Layer)){ map.removeLayer(pm25Layer); pm25Layer=null; return; }
+  const data=[{lat:43.7,lon:-79.42,value:35},{lat:43.8,lon:-79.43,value:50},{lat:43.9,lon:-79.44,value:65}];
+  const points = data.map(d=>[d.lat,d.lon,d.value/150]); // normalized
+  pm25Layer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
+  map.addLayer(pm25Layer);
 });
 
-// --- TEMPO NO2 Overlay ---
-let tempoOverlayEnabled=false, tempoLayer=null;
 document.getElementById('tempo-overlay-toggle').addEventListener('click',()=>{
-    tempoOverlayEnabled=!tempoOverlayEnabled;
-    if(tempoOverlayEnabled){
-        if(!tempoLayer){
-            const data=[{lat:43.7,lon:-79.42,value:0.5},{lat:43.8,lon:-79.43,value:0.7},{lat:43.9,lon:-79.44,value:0.9}];
-            const points=data.map(d=>[d.lat,d.lon,d.value]); // already 0-1
-            tempoLayer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
-        }
-        map.addLayer(tempoLayer);
-    }else if(tempoLayer){ map.removeLayer(tempoLayer);}
+  if(tempoLayer && map.hasLayer(tempoLayer)){ map.removeLayer(tempoLayer); tempoLayer=null; return; }
+  const data=[{lat:43.7,lon:-79.42,value:0.5},{lat:43.8,lon:-79.43,value:0.7},{lat:43.9,lon:-79.44,value:0.9}];
+  const points = data.map(d=>[d.lat,d.lon,d.value]); // normalized
+  tempoLayer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
+  map.addLayer(tempoLayer);
 });
 </script>
 </body>

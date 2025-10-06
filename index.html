@@ -192,23 +192,26 @@ document.getElementById('forecast-toggle').addEventListener('click',()=>{
   aqChart.update();
 });
 
-// --- Heatmap Overlays ---
-let pm25Layer=null, tempoLayer=null;
-
-document.getElementById('pm25-overlay-toggle').addEventListener('click',()=>{
-  if(pm25Layer && map.hasLayer(pm25Layer)){ map.removeLayer(pm25Layer); pm25Layer=null; return; }
-  const data=[{lat:43.7,lon:-79.42,value:35},{lat:43.8,lon:-79.43,value:50},{lat:43.9,lon:-79.44,value:65}];
-  const points = data.map(d=>[d.lat,d.lon,d.value/150]); // normalized
-  pm25Layer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
-  map.addLayer(pm25Layer);
+// --- Overlays ---
+const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi',{
+  layers:'OMNO2d',format:'image/png',transparent:true,attribution:'NASA GIBS TEMPO'
+});
+let tempoAdded=false;
+document.getElementById('tempo-overlay-toggle').addEventListener('click',()=>{
+  if(tempoAdded){ map.removeLayer(tempoLayer); tempoAdded=false; }
+  else{ tempoLayer.addTo(map); tempoAdded=true; }
 });
 
-document.getElementById('tempo-overlay-toggle').addEventListener('click',()=>{
-  if(tempoLayer && map.hasLayer(tempoLayer)){ map.removeLayer(tempoLayer); tempoLayer=null; return; }
-  const data=[{lat:43.7,lon:-79.42,value:0.5},{lat:43.8,lon:-79.43,value:0.7},{lat:43.9,lon:-79.44,value:0.9}];
-  const points = data.map(d=>[d.lat,d.lon,d.value]); // normalized
-  tempoLayer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
-  map.addLayer(tempoLayer);
+// PM2.5 Heatmap overlay (mock points)
+const heatPoints = [];
+for(let i=0;i<50;i++){
+  heatPoints.push([43+Math.random(),-79+Math.random(),Math.random()]); // [lat, lon, intensity]
+}
+const pm25Layer=L.heatLayer(heatPoints,{radius:25,blur:15,maxZoom:17});
+let pm25Added=false;
+document.getElementById('pm25-overlay-toggle').addEventListener('click',()=>{
+  if(pm25Added){ map.removeLayer(pm25Layer); pm25Added=false; }
+  else{ pm25Layer.addTo(map); pm25Added=true; }
 });
 </script>
 </body>

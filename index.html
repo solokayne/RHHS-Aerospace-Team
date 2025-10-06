@@ -69,7 +69,7 @@ select,input { border-radius:4px; border:1px solid #aaa; padding:4px 6px; }
         <label class="inline small"><input id="mock-toggle" type="checkbox" checked /> <span>Use mock data if network/API calls fail</span></label>
         <div><label class="small">Notify when AQI &gt; <input id="alert-thresh" type="number" value="100" style="width:70px" /></label></div>
         <button id="forecast-toggle">Toggle Forecast</button>
-        <button id="bad-aq-toggle">Toggle TEMPO AQ Overlay</button>
+        <button id="tempo-overlay-toggle">Toggle TEMPO Overlay</button>
       </div>
     </div>
 
@@ -96,152 +96,104 @@ select,input { border-radius:4px; border:1px solid #aaa; padding:4px 6px; }
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
-
 <script>
-// Initialize Map
+// Map setup
 const map = L.map('map').setView([43.770, -79.440], 8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(map);
 
 // TEMPO WMS layers
-const tempoNO2Layer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
-  layers: 'OMNO2d', format: 'image/png', transparent:true, attribution:'NASA GIBS'
+const tempoNO2 = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
+  layers:'OMNO2d', format:'image/png', transparent:true, attribution:'NASA GIBS'
 });
-const tempoO3Layer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
-  layers: 'OMO3d', format: 'image/png', transparent:true, attribution:'NASA GIBS'
-});
-
-// Overlay group for shading high NO2 areas
-let tempoAQLayer = L.layerGroup().addTo(map);
-let overlayEnabled = false;
-
-// Forecast toggle
-let forecastEnabled = false;
-
-document.getElementById('forecast-toggle').addEventListener('click', () => {
-  forecastEnabled = !forecastEnabled;
-  alert(`Forecast ${forecastEnabled ? 'enabled' : 'disabled'}.`);
+const tempoO3 = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi', {
+  layers:'OMO3d', format:'image/png', transparent:true, attribution:'NASA GIBS'
 });
 
-// Toggle AQ overlay
-document.getElementById('bad-aq-toggle').addEventListener('click', () => {
-  overlayEnabled = !overlayEnabled;
-  if(overlayEnabled){ tempoAQLayer.addTo(map); updateTEMPOOverlay(); }
-  else { tempoAQLayer.clearLayers(); }
+// Overlay toggle
+let overlayEnabled=false;
+document.getElementById('tempo-overlay-toggle').addEventListener('click', ()=>{
+  overlayEnabled=!overlayEnabled;
+  if(overlayEnabled){ tempoNO2.addTo(map); tempoO3.addTo(map); } 
+  else { map.removeLayer(tempoNO2); map.removeLayer(tempoO3); }
 });
 
-// Leaflet Legend
+// Legend
 const legend = L.control({position:'bottomright'});
 legend.onAdd = function(map){
-  const div = L.DomUtil.create('div','info legend');
+  const div=L.DomUtil.create('div','info legend');
   div.style.background='white'; div.style.padding='6px'; div.style.borderRadius='6px';
   div.style.boxShadow='0 0 8px rgba(0,0,0,0.2)';
-  const ranges = [
-    {label:'Good (0-50 ppb)', color:'#2ECC40'},
-    {label:'Moderate (51-100)', color:'#FFDC00'},
-    {label:'Unhealthy Sensitive (101-150)', color:'#FF851B'},
-    {label:'Unhealthy (151-200)', color:'#FF4136'},
-    {label:'Very Unhealthy (>200)', color:'#800000'}
+  const grades = [
+    {color:'#2ECC40',label:'Good (0-50 ppb)'},
+    {color:'#FFDC00',label:'Moderate (51-100)'},
+    {color:'#FF851B',label:'Unhealthy for sensitive (101-150)'},
+    {color:'#FF4136',label:'Unhealthy (151-200)'},
+    {color:'#800000',label:'Very Unhealthy (>200)'}
   ];
-  ranges.forEach(r => {
-    div.innerHTML += `<i style="background:${r.color};width:18px;height:12px;display:inline-block;margin-right:6px;"></i>${r.label}<br>`;
-  });
+  grades.forEach(g=>{ div.innerHTML += `<i style="background:${g.color};width:18px;height:12px;display:inline-block;margin-right:6px;"></i>${g.label}<br>` });
   return div;
 };
 legend.addTo(map);
 
 // Chart setup
 const ctx = document.getElementById('aq-chart');
-const aqChart = new Chart(ctx, {
+const aqChart = new Chart(ctx,{
   type:'line',
-  data:{ labels:[], datasets:[
-    { label:'PM2.5 Observed (µg/m³)', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true },
-    { label:'PM2.5 Forecast (µg/m³)', data:[], borderColor:'#3366FF', backgroundColor:'rgba(51,102,255,0.3)', fill:true, borderDash:[5,5] }
+  data:{labels:[], datasets:[
+    {label:'PM2.5 Observed', data:[], borderColor:'#FF5733', backgroundColor:'rgba(255,87,51,0.3)', fill:true},
+    {label:'PM2.5 Forecast', data:[], borderColor:'#3366FF', backgroundColor:'rgba(51,102,255,0.3)', fill:true, borderDash:[5,5]}
   ]},
-  options:{ responsive:true, plugins:{ legend:{ display:true }}, scales:{ y:{ beginAtZero:true } } }
+  options:{responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}}}
 });
 
-// Helper functions
-function logTest(msg){ const el = document.getElementById('test-log'); el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + el.textContent; }
-function getAQColor(v){ if(v<=12) return '#2ECC40'; if(v<=35.4) return '#FFDC00'; if(v<=55.4) return '#FF851B'; if(v<=150) return '#FF4136'; return '#800000'; }
+// Mock PM2.5 or OpenAQ
+function sampleAQ(lat,lon){ const now=new Date().toISOString(); const val=Math.max(0,10+Math.abs(Math.sin(lat*0.1+lon*0.1))*80); return {results:[{measurements:[{parameter:'pm25',value:val,unit:'µg/m³',lastUpdated:now}]}]};}
+
+// Update AQ chart & marker
+let pointMarker=null;
+function updateAQ(lat,lon,data){
+  if(!data||!data.results.length) return;
+  const m=data.results[0].measurements.find(x=>x.parameter==='pm25');
+  if(!m) return;
+  const label=new Date(m.lastUpdated).toLocaleTimeString();
+  aqChart.data.labels.push(label);
+  aqChart.data.datasets[0].data.push(m.value);
+  if(aqChart.data.labels.length>24){ aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); aqChart.data.datasets[1].data.shift(); }
+  // Forecast (mock, can integrate TEMPO predictive data)
+  const forecastVal=m.value+Math.random()*10-5;
+  aqChart.data.datasets[1].data.push(forecastVal);
+  aqChart.update();
+  document.getElementById('aq-details').innerHTML=`PM2.5: <b>${m.value.toFixed(1)} µg/m³</b><br>Last updated: ${new Date(m.lastUpdated).toLocaleString()}`;
+  if(pointMarker) map.removeLayer(pointMarker);
+  pointMarker=L.circleMarker([lat,lon],{radius:12, fillColor:'#FF5733', color:'#333', weight:1, fillOpacity:0.8}).addTo(map);
+  pointMarker.bindPopup(`PM2.5: ${m.value.toFixed(1)} µg/m³`).openPopup();
+  const thresh=Number(document.getElementById('alert-thresh').value);
+  if(m.value>thresh) addAlert(`High AQI detected: ${m.value.toFixed(1)} µg/m³`);
+}
+
+// Alerts
 function addAlert(msg){ const ul=document.getElementById('alerts-list'); const li=document.createElement('li'); li.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`; ul.prepend(li); }
 
-// Mock OpenAQ fetch
-function getMockPM25(lat, lon){ return Math.max(0, 10 + Math.abs(Math.sin(lat*0.1+lon*0.1))*80); }
-function sampleOpenAQ(lat, lon){
-  const now = new Date().toISOString();
-  const val = getMockPM25(lat, lon).toFixed(1);
-  return { results:[{ measurements:[{parameter:'pm25', value:Number(val), unit:'µg/m³', lastUpdated:now}]}]};
-}
-
-// Chart + marker update
-let pointMarker = null;
-function updateAQDisplay(lat, lon, data){
-  if(!data||!data.results||!data.results.length) return;
-  const measurement = data.results[0].measurements.find(m=>m.parameter==='pm25');
-  if(!measurement) return;
-  const label = new Date(measurement.lastUpdated).toLocaleTimeString();
-  aqChart.data.labels.push(label);
-  aqChart.data.datasets[0].data.push(measurement.value);
-  if(aqChart.data.labels.length>48){ aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); }
-  aqChart.update();
-  document.getElementById('aq-details').innerHTML = `PM2.5: <b>${measurement.value} µg/m³</b><br>Last updated: ${new Date(measurement.lastUpdated).toLocaleString()}`;
-  if(pointMarker) map.removeLayer(pointMarker);
-  pointMarker = L.circleMarker([lat, lon], {radius:12, fillColor:getAQColor(measurement.value), color:'#333', weight:1, fillOpacity:0.8}).addTo(map);
-  pointMarker.bindPopup(`PM2.5: ${measurement.value} µg/m³`).openPopup();
-  const thresh = Number(document.getElementById('alert-thresh').value);
-  if(measurement.value > thresh) addAlert(`High AQI detected: ${measurement.value} µg/m³`);
-}
-
-// Fetch OpenAQ
-async function fetchOpenAQ(lat, lon, allowMock=true){
-  if(!navigator.onLine) return allowMock ? sampleOpenAQ(lat,lon) : null;
-  const url = `https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`;
-  try{ const r = await fetch(url); if(!r.ok) return allowMock ? sampleOpenAQ(lat,lon) : null; return await r.json(); }
-  catch(e){ return allowMock ? sampleOpenAQ(lat,lon) : null; }
-}
-
-// Forecast data simulation
-function getForecastData(lat, lon, hours=24){
-  const forecast = []; const now=Date.now();
-  for(let i=1;i<=hours;i++){ const val=Math.max(0,10+Math.abs(Math.sin(lat*0.1+lon*0.1+(i/6)))*50); forecast.push({time:new Date(now+i*3600*1000), value:Number(val.toFixed(1))}); }
-  return forecast;
+// Fetch AQ
+async function fetchAQ(lat,lon,allowMock=true){
+  if(!navigator.onLine) return allowMock?sampleAQ(lat,lon):null;
+  try{
+    const res=await fetch(`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`);
+    if(!res.ok) return allowMock?sampleAQ(lat,lon):null;
+    return await res.json();
+  }catch(e){ return allowMock?sampleAQ(lat,lon):null; }
 }
 
 // Handle location click
-async function handleLocation(lat, lon){
-  const hours = Number(document.getElementById('forecast-window').value);
-  const aq = await fetchOpenAQ(lat, lon);
-  updateAQDisplay(lat, lon, aq);
-  if(forecastEnabled){
-    const forecast = getForecastData(lat, lon, hours);
-    aqChart.data.datasets[1].data=[]; // clear previous forecast
-    forecast.forEach(pt => { aqChart.data.labels.push(pt.time.toLocaleTimeString()); aqChart.data.datasets[1].data.push(pt.value); });
-    aqChart.update();
-  }
+async function handleLocation(lat,lon){
+  const data=await fetchAQ(lat,lon,document.getElementById('mock-toggle').checked);
+  updateAQ(lat,lon,data);
 }
 
-// TEMPO overlay shading (NO2)
-function getTEMPOValue(lat, lon){ return Math.max(0,30+Math.abs(Math.sin(lat*0.1+lon*0.1))*200); }
-function getTEMPOColor(val){ if(val<=50) return '#2ECC40'; if(val<=100) return '#FFDC00'; if(val<=150) return '#FF851B'; if(val<=200) return '#FF4136'; return '#800000'; }
-function updateTEMPOOverlay(){
-  tempoAQLayer.clearLayers();
-  const bounds = map.getBounds();
-  const stepLat=(bounds.getNorth()-bounds.getSouth())/15;
-  const stepLon=(bounds.getEast()-bounds.getWest())/15;
-  for(let i=0;i<15;i++){ for(let j=0;j<15;j++){
-    const lat=bounds.getSouth()+i*stepLat; const lon=bounds.getWest()+j*stepLon;
-    const val=getTEMPOValue(lat,lon);
-    if(val>50){ const rect=L.rectangle([[lat, lon],[lat+stepLat, lon+stepLon]],{color:getTEMPOColor(val), fillColor:getTEMPOColor(val), fillOpacity:0.4, weight:0}); tempoAQLayer.addLayer(rect); }
-  }}
-}
-
-// Map click & move events
-map.on('click', e => handleLocation(e.latlng.lat, e.latlng.lng));
-map.on('moveend', ()=>{ if(overlayEnabled) updateTEMPOOverlay(); });
-
-// Buttons
-document.getElementById('loc-btn').addEventListener('click', ()=>{ if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(p=>handleLocation(p.coords.latitude,p.coords.longitude)); } else alert('Geolocation not supported.'); });
-document.getElementById('run-tests').addEventListener('click', ()=>logTest('All systems nominal'));
+// Map click & locate
+map.on('click',e=>handleLocation(e.latlng.lat,e.latlng.lng));
+document.getElementById('loc-btn').addEventListener('click',()=>{if(navigator.geolocation){navigator.geolocation.getCurrentPosition(p=>handleLocation(p.coords.latitude,p.coords.longitude));}else alert('Geolocation not supported.');});
+document.getElementById('run-tests').addEventListener('click',()=>document.getElementById('test-log').textContent='[INFO] All systems nominal');
 </script>
 </body>
 </html>

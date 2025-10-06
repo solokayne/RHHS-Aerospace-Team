@@ -130,7 +130,20 @@ const aqChart = new Chart(ctx,{
   options:{ responsive:true, plugins:{legend:{display:true}}, scales:{y:{beginAtZero:true}} }
 });
 
-// --- Mock AQ ---
+// --- Alerts ---
+function addAlert(msg){ const ul=document.getElementById('alerts-list'); const li=document.createElement('li'); li.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`; ul.prepend(li); }
+
+// --- Fetch AQ Data ---
+async function fetchAQ(lat,lon,allowMock=true){
+  if(!navigator.onLine) return allowMock?sampleAQ(lat,lon):null;
+  try{
+    const res = await fetch(`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`);
+    if(!res.ok) return allowMock?sampleAQ(lat,lon):null; 
+    return await res.json();
+  }catch(e){ return allowMock?sampleAQ(lat,lon):null; }
+}
+
+// --- Sample AQ ---
 function sampleAQ(lat,lon){
   const now=new Date().toISOString();
   const val=Math.max(0,10+Math.abs(Math.sin(lat*0.1+lon*0.1))*80);
@@ -163,37 +176,29 @@ async function updateAQ(lat,lon,data){
   if(m.value>thresh) addAlert(`High AQI detected: ${m.value.toFixed(1)} µg/m³`);
 }
 
-// --- Alerts ---
-function addAlert(msg){ const ul=document.getElementById('alerts-list'); const li=document.createElement('li'); li.textContent=`[${new Date().toLocaleTimeString()}] ${msg}`; ul.prepend(li); }
-
-// --- Fetch AQ ---
-async function fetchAQ(lat,lon,allowMock=true){
-  if(!navigator.onLine) return allowMock?sampleAQ(lat,lon):null;
-  try{
-    const res = await fetch(`https://api.openaq.org/v2/latest?coordinates=${lat},${lon}&radius=5000&limit=20`);
-    if(!res.ok) return allowMock?sampleAQ(lat,lon):null; 
-    return await res.json();
-  }catch(e){ return allowMock?sampleAQ(lat,lon):null; }
-}
-
-// --- Handle Location ---
-async function handleLocation(lat, lon){
+// --- Handle location ---
+async function handleLocation(lat,lon){
   const data = await fetchAQ(lat, lon, document.getElementById('mock-toggle').checked);
   updateAQ(lat, lon, data);
+  updateHeatmap();
 }
 
+// --- Map click / geolocation ---
 map.on('click',e=>handleLocation(e.latlng.lat,e.latlng.lng));
-document.getElementById('loc-btn').addEventListener('click',()=>{ if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p=>handleLocation(p.coords.latitude,p.coords.longitude)); else alert('Geolocation not supported.'); });
+document.getElementById('loc-btn').addEventListener('click',()=>{
+  if(navigator.geolocation) navigator.geolocation.getCurrentPosition(p=>handleLocation(p.coords.latitude,p.coords.longitude));
+  else alert('Geolocation not supported.');
+});
 document.getElementById('run-tests').addEventListener('click',()=>document.getElementById('test-log').textContent='[INFO] All systems nominal');
 
-// --- Forecast Toggle ---
+// --- Forecast toggle ---
 document.getElementById('forecast-toggle').addEventListener('click',()=>{ 
-  aqChart.data.datasets[1].hidden = !aqChart.data.datasets[1].hidden; 
+  aqChart.data.datasets[1].hidden=!aqChart.data.datasets[1].hidden; 
   aqChart.update();
 });
 
-// --- Overlays ---
-const tempoLayer = L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi',{
+// --- TEMPO NO2 Overlay ---
+const tempoLayer=L.tileLayer.wms('https://gibs.earthdata.nasa.gov/wms/epsg4326/best/wms.cgi',{
   layers:'OMNO2d',format:'image/png',transparent:true,attribution:'NASA GIBS TEMPO'
 });
 let tempoAdded=false;
@@ -202,17 +207,36 @@ document.getElementById('tempo-overlay-toggle').addEventListener('click',()=>{
   else{ tempoLayer.addTo(map); tempoAdded=true; }
 });
 
-// PM2.5 Heatmap overlay (mock points)
-const heatPoints = [];
-for(let i=0;i<50;i++){
-  heatPoints.push([43+Math.random(),-79+Math.random(),Math.random()]); // [lat, lon, intensity]
-}
-const pm25Layer=L.heatLayer(heatPoints,{radius:25,blur:15,maxZoom:17});
+// --- PM2.5 Heatmap Overlay ---
+let pm25Layer = L.heatLayer([],{radius:25,blur:15,maxZoom:17});
 let pm25Added=false;
 document.getElementById('pm25-overlay-toggle').addEventListener('click',()=>{
   if(pm25Added){ map.removeLayer(pm25Layer); pm25Added=false; }
   else{ pm25Layer.addTo(map); pm25Added=true; }
 });
+
+// --- Update Heatmap dynamically from OpenAQ ---
+async function updateHeatmap(){
+  if(!pm25Added) return;
+  const bounds = map.getBounds();
+  const lat1=bounds.getSouth(); const lat2=bounds.getNorth();
+  const lon1=bounds.getWest(); const lon2=bounds.getEast();
+  try{
+    const res=await fetch(`https://api.openaq.org/v2/measurements?parameter=pm25&limit=100&date_from=${new Date(Date.now()-24*3600*1000).toISOString()}&coordinates=${(lat1+lat2)/2},${(lon1+lon2)/2}&radius=50000`);
+    const data=await res.json();
+    const points=[];
+    if(data.results){
+      data.results.forEach(d=>{
+        if(d.coordinates) points.push([d.coordinates.latitude,d.coordinates.longitude,d.value/150]);
+      });
+      pm25Layer.setLatLngs(points);
+    }
+  }catch(e){}
+}
+
+// Update heatmap on move / zoom
+map.on('moveend',updateHeatmap);
+
 </script>
 </body>
 </html>

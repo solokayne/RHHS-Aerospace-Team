@@ -145,10 +145,14 @@ async function updateAQ(lat,lon,data){
     const label = new Date(m.lastUpdated).toLocaleTimeString();
     aqChart.data.labels.push(label);
     aqChart.data.datasets[0].data.push(m.value);
-    // Simple forecast mock
-    const forecastVal = 50 + Math.abs(Math.sin(lat*0.1+lon*0.1))*100; 
+
+    // Forecast mock
+    const forecastVal = Math.max(0, m.value + Math.random()*20-10);
     aqChart.data.datasets[1].data.push(forecastVal);
-    if(aqChart.data.labels.length>24){ aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); aqChart.data.datasets[1].data.shift(); }
+
+    if(aqChart.data.labels.length>24){
+        aqChart.data.labels.shift(); aqChart.data.datasets[0].data.shift(); aqChart.data.datasets[1].data.shift();
+    }
     aqChart.update();
 
     if(pointMarker) map.removeLayer(pointMarker);
@@ -198,7 +202,7 @@ document.getElementById('pm25-overlay-toggle').addEventListener('click',()=>{
     if(pm25OverlayEnabled){
         if(!pm25Layer){
             const data=[{lat:43.7,lon:-79.42,value:35},{lat:43.8,lon:-79.43,value:50},{lat:43.9,lon:-79.44,value:65}];
-            const points=data.map(d=>[d.lat,d.lon,d.value]);
+            const points=data.map(d=>[d.lat,d.lon,d.value/150]); // normalized
             pm25Layer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
         }
         map.addLayer(pm25Layer);
@@ -212,7 +216,7 @@ document.getElementById('tempo-overlay-toggle').addEventListener('click',()=>{
     if(tempoOverlayEnabled){
         if(!tempoLayer){
             const data=[{lat:43.7,lon:-79.42,value:0.5},{lat:43.8,lon:-79.43,value:0.7},{lat:43.9,lon:-79.44,value:0.9}];
-            const points=data.map(d=>[d.lat,d.lon,d.value]);
+            const points=data.map(d=>[d.lat,d.lon,d.value]); // already 0-1
             tempoLayer=L.heatLayer(points,{radius:25,blur:15,maxZoom:17,gradient:{0.2:'#2ECC40',0.4:'#FFDC00',0.6:'#FF851B',0.8:'#FF4136',1.0:'#800000'}});
         }
         map.addLayer(tempoLayer);
